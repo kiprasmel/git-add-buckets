@@ -390,6 +390,8 @@ export type DiffLinesProps = {
 };
 
 export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLines, selectedBucket, bucketCount }) => {
+	const currentBucketIsSelected = (lineBucket: number): boolean => lineBucket !== -1 && lineBucket === selectedBucket;
+
 	return (
 		<>
 			<ul>
@@ -405,12 +407,10 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 
 								<button
 									onClick={() => {
-										if (line.bucket === -1) {
+										if (!currentBucketIsSelected(line.bucket)) {
 											// line.bucket = selectedBucket;
 											dispatchDiffLines({ type: "assign_bucket", idx, bucket: selectedBucket });
 										} else {
-											// TODO: UX yay/nay?
-
 											// line.bucket = -1;
 											dispatchDiffLines({ type: "assign_bucket", idx, bucket: -1 });
 										}
@@ -422,8 +422,7 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 										margin-right: 0.5em;
 									`}
 								>
-									{/* TODO: separate button, or keep as-is? */}
-									{line.bucket === -1 ? "+" : "-"}
+									{!currentBucketIsSelected(line.bucket) ? "+" : "-"}
 								</button>
 
 								<code>
