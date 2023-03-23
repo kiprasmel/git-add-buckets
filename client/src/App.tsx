@@ -386,6 +386,8 @@ export const BucketLetter: FC<BucketLetterProps> = ({ selectedBucket, bucketCoun
 					css`
 						color: hsl(${bucketIdxToHue(selectedBucket, bucketCount)}, 100%, 50%);
 						width: 2ch;
+
+						text-align: center;
 					`,
 					{
 						[css`
@@ -457,7 +459,9 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 							>
 								<BucketLetter selectedBucket={line.bucket} bucketCount={bucketCount} />
 
-								<button
+								<input
+									type="checkbox"
+									checked={currentBucketIsSelected(line.bucket)}
 									onClick={() => {
 										if (!currentBucketIsSelected(line.bucket)) {
 											// line.bucket = selectedBucket;
@@ -469,9 +473,10 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 									}}
 									className={cx(
 										css`
-											height: 2em;
-											width: 2em;
+											height: 1.5em;
+											width: 1.5em;
 
+											margin: 0.25em;
 											margin-right: 0.5em;
 										`,
 										{
@@ -480,9 +485,7 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 											`]: !isStageable,
 										}
 									)}
-								>
-									{!currentBucketIsSelected(line.bucket) ? "+" : "-"}
-								</button>
+								/>
 
 								<code>{lineToProperVisualSpacing(line.lineStr)}</code>
 							</div>
