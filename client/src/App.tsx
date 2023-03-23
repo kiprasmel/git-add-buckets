@@ -484,14 +484,7 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 									{!currentBucketIsSelected(line.bucket) ? "+" : "-"}
 								</button>
 
-								<code>
-									<span
-										dangerouslySetInnerHTML={{
-											__html: "&nbsp".repeat(countLeftSpaces(line.lineStr)),
-										}}
-									/>
-									{line.lineStr.trimStart()}
-								</code>
+								<code>{lineToProperVisualSpacing(line.lineStr)}</code>
 							</div>
 						</li>
 					);
@@ -503,16 +496,49 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 
 export const isLineStageable = (line: string): boolean => line[0] === "-" || line[0] === "+";
 
-export const countLeftSpaces = (str: string): number => {
-	let cnt = 0;
-	for (let i = 0; i < str.length; i++) {
-		if (str[i] === " ") {
-			cnt++;
-		} else {
-			break;
+export const lineToProperVisualSpacing = (line: string): (string | JSX.Element)[] => {
+	const jsx = [];
+
+	let i = 0;
+	while (i < line.length) {
+		/**
+		 * perform space adding first,
+		 * because left-most spaces matter,
+		 * meanwhile right-most spaces don't.
+		 */
+		let spaceCnt = 0;
+		while (i < line.length) {
+			if (line[i] === " ") spaceCnt += 1;
+			else if (line[i] === "\t") spaceCnt += 4;
+			else break;
+
+			++i;
+		}
+		jsx.push(<span dangerouslySetInnerHTML={{ __html: "&nbsp".repeat(spaceCnt) }} />);
+
+		/**
+		 * perform non-spaces.
+		 */
+		let i0 = i;
+		while (i < line.length) {
+			if (line[i] === "\t") {
+				break;
+			} else if (line[i] === " ") {
+				if (i + 1 >= line.length || line[i + 1] !== " ") {
+					++i;
+				} else {
+					break;
+				}
+			} else {
+				++i;
+			}
+		}
+		if (i0 !== i) {
+			jsx.push(line.slice(i0, i));
 		}
 	}
-	return cnt;
+
+	return jsx;
 };
 
 export default App;
