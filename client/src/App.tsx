@@ -12,11 +12,11 @@ function App() {
 	const [buckets, dispatchBuckets] = useReducer(bucketsReducer, TEST_BUCKETS);
 	const [selectedBucket, setSelectedBucket] = useState<number>(DEFAULT_SELECTED_BUCKET);
 
-	const [diffLines, dispatchDiffLines] = useReducer(diffLinesReducer, TEST_DIFFLINES);
+	const [diffHunks, dispatchDiffHunks] = useReducer(diffHunksReducer, TEST_DIFFHUNKS);
 
 	useEffect(() => {
-		fetchDiffLines().then((diffLines) => {
-			dispatchDiffLines({ type: "set_new_diff_lines", diffLines });
+		fetchDiffHunks().then((diffHunks) => {
+			dispatchDiffHunks({ type: "set_new_diff_hunks", diffHunks });
 		});
 	}, []);
 
@@ -45,20 +45,34 @@ function App() {
 				dispatchBuckets={dispatchBuckets}
 				selectedBucket={selectedBucket}
 				setSelectedBucket={setSelectedBucket}
-				diffLines={diffLines}
+				diffLines={diffHunks.flat()}
 			></Buckets>
 
 			<section
 				className={css`
 					width: 70%;
+					height: 100%;
+
+					overflow-y: scroll;
 				`}
 			>
-				<DiffLines //
-					diffLines={diffLines}
-					dispatchDiffLines={dispatchDiffLines}
-					selectedBucket={selectedBucket}
-					bucketCount={buckets.length}
-				></DiffLines>
+				{diffHunks.map((hunk, hunkIdx) => (
+					<div
+						className={css`
+							border: 1px solid black;
+							border-radius: 6px;
+							margin: 1em;
+						`}
+					>
+						<DiffLines //
+							diffLines={hunk}
+							dispatchDiffHunks={dispatchDiffHunks}
+							hunkIdx={hunkIdx}
+							selectedBucket={selectedBucket}
+							bucketCount={buckets.length}
+						></DiffLines>
+					</div>
+				))}
 			</section>
 		</main>
 	);
@@ -86,22 +100,27 @@ export const bucketsReducer: Reducer<Bucket[], BucketsReducerActions> = (state, 
 	assertNever(action);
 };
 
-export type DiffLinesActions =
+export type DiffHunksActions =
 	| {
-			type: "assign_bucket";
-			idx: number;
+			type: "assign_line_to_bucket";
+			hunkIdx: number;
+			lineIdx: number;
 			bucket: number;
 	  }
 	| {
-			type: "set_new_diff_lines";
-			diffLines: DiffLine[];
+			type: "set_new_diff_hunks";
+			diffHunks: DiffHunk[];
 	  };
 
-export const diffLinesReducer: Reducer<DiffLine[], DiffLinesActions> = (state, action) => {
-	if (action.type === "assign_bucket") {
-		return state.map((dl, idx) => (idx === action.idx ? { ...dl, bucket: action.bucket } : dl));
-	} else if (action.type === "set_new_diff_lines") {
-		return action.diffLines;
+export const diffHunksReducer: Reducer<DiffHunk[], DiffHunksActions> = (state, action) => {
+	if (action.type === "assign_line_to_bucket") {
+		return state.map((hunk, hunkIdx) =>
+			hunkIdx !== action.hunkIdx
+				? hunk
+				: hunk.map((line, lineIdx) => (lineIdx !== action.lineIdx ? line : { ...line, bucket: action.bucket }))
+		);
+	} else if (action.type === "set_new_diff_hunks") {
+		return action.diffHunks;
 	}
 
 	assertNever(action);
@@ -113,7 +132,7 @@ export function assertNever(x: never): never {
 
 // ---
 
-export const fetchDiffLines = async () => {
+export const fetchDiffHunks = async (): Promise<DiffHunk[]> => {
 	const projectPath = "/Users/kipras"; // TODO
 	// const gitCmd = `git --git-dir="$HOME/.dotfiles/" --work-tree="$HOME"` // TODO
 	const gitCmd = `git --git-dir="/Users/kipras/.dotfiles/" --work-tree="/Users/kipras"`; // TODO
@@ -129,22 +148,23 @@ export const fetchDiffLines = async () => {
 	// const file = data[Date.now() % data.length];
 	// const hunk: string[] = file.hunks[Date.now() % file.hunks.length];
 	const file = data[0];
-	const hunk: string[] = file.hunks[0];
 
 	/** remap */
-	const remappedHunk = hunk.map(
-		(line, idx): DiffLine => ({
-			lineStr: line,
-			filePos: /** TODO FIXME */ {
-				filepath: file.to,
-				line: idx,
-				col: 0,
-			},
-			bucket: -1,
-		})
+	const remappedHunks: DiffHunk[] = file.hunks.map((hunk: RawDiffHunk) =>
+		hunk.map(
+			(line, idx): DiffLine => ({
+				lineStr: line,
+				filePos: /** TODO FIXME */ {
+					filepath: file.to,
+					line: idx,
+					col: 0,
+				},
+				bucket: -1,
+			})
+		)
 	);
 
-	return remappedHunk;
+	return remappedHunks;
 };
 
 // ---
@@ -161,6 +181,9 @@ export type DiffLine = {
 
 	bucket: number;
 };
+
+export type RawDiffHunk = string[];
+export type DiffHunk = DiffLine[];
 
 export type Bucket = {
 	// addedPatchLines: DiffLine[];
@@ -432,15 +455,26 @@ const TEST_DIFFLINES: DiffLine[] = [
 	{ lineStr: "    fizz", filePos: { filepath: "foo.ts", line: 1, col: 1 }, bucket: -1 },
 ];
 
+const TEST_DIFFHUNKS: DiffHunk[] = [
+	TEST_DIFFLINES, //
+];
+
 export type DiffLinesProps = {
 	diffLines: DiffLine[];
-	dispatchDiffLines: Dispatch<DiffLinesActions>;
+	dispatchDiffHunks: Dispatch<DiffHunksActions>;
+	hunkIdx: number;
 
 	selectedBucket: number;
 	bucketCount: number;
 };
 
-export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLines, selectedBucket, bucketCount }) => {
+export const DiffLines: FC<DiffLinesProps> = ({
+	diffLines = [], //
+	dispatchDiffHunks,
+	hunkIdx,
+	selectedBucket,
+	bucketCount,
+}) => {
 	const currentBucketIsSelected = (lineBucket: number): boolean => lineBucket !== -1 && lineBucket === selectedBucket;
 
 	return (
@@ -465,10 +499,15 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 									onClick={() => {
 										if (!currentBucketIsSelected(line.bucket)) {
 											// line.bucket = selectedBucket;
-											dispatchDiffLines({ type: "assign_bucket", idx, bucket: selectedBucket });
+											dispatchDiffHunks({
+												type: "assign_line_to_bucket",
+												hunkIdx,
+												lineIdx: idx,
+												bucket: selectedBucket,
+											});
 										} else {
 											// line.bucket = -1;
-											dispatchDiffLines({ type: "assign_bucket", idx, bucket: -1 });
+											dispatchDiffHunks({ type: "assign_line_to_bucket", hunkIdx, lineIdx: idx, bucket: -1 });
 										}
 									}}
 									className={cx(
