@@ -396,11 +396,14 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 		<>
 			<ul>
 				{diffLines.map((line, idx) => {
+					const isStageable: boolean = isLineStageable(line.lineStr);
+
 					return (
 						<li>
 							<div
 								className={css`
 									display: flex;
+									align-items: center;
 								`}
 							>
 								<BucketLetter selectedBucket={line.bucket} bucketCount={bucketCount} />
@@ -415,12 +418,19 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 											dispatchDiffLines({ type: "assign_bucket", idx, bucket: -1 });
 										}
 									}}
-									className={css`
-										height: 2em;
-										width: 2em;
+									className={cx(
+										css`
+											height: 2em;
+											width: 2em;
 
-										margin-right: 0.5em;
-									`}
+											margin-right: 0.5em;
+										`,
+										{
+											[css`
+												visibility: hidden;
+											`]: !isStageable,
+										}
+									)}
 								>
 									{!currentBucketIsSelected(line.bucket) ? "+" : "-"}
 								</button>
@@ -441,6 +451,8 @@ export const DiffLines: FC<DiffLinesProps> = ({ diffLines = [], dispatchDiffLine
 		</>
 	);
 };
+
+export const isLineStageable = (line: string): boolean => line[0] === "-" || line[0] === "+";
 
 export const countLeftSpaces = (str: string): number => {
 	let cnt = 0;
