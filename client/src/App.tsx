@@ -1,4 +1,4 @@
-import { Dispatch, FC, Reducer, useReducer, useRef, useState } from "react";
+import { Dispatch, FC, Reducer, useEffect, useReducer, useRef, useState } from "react";
 import { css, cx } from "emotion";
 
 import "./App.css";
@@ -13,6 +13,12 @@ function App() {
 	const [selectedBucket, setSelectedBucket] = useState<number>(DEFAULT_SELECTED_BUCKET);
 
 	const [diffLines, dispatchDiffLines] = useReducer(diffLinesReducer, TEST_DIFFLINES);
+
+	useEffect(() => {
+		fetchDiffLines().then((diffLines) => {
+			dispatchDiffLines({ type: "set_new_diff_lines", diffLines });
+		});
+	}, []);
 
 	return (
 		<main
@@ -80,23 +86,66 @@ export const bucketsReducer: Reducer<Bucket[], BucketsReducerActions> = (state, 
 	assertNever(action);
 };
 
-export type DiffLinesActions = {
-	type: "assign_bucket";
-	idx: number;
-	bucket: number;
-};
+export type DiffLinesActions =
+	| {
+			type: "assign_bucket";
+			idx: number;
+			bucket: number;
+	  }
+	| {
+			type: "set_new_diff_lines";
+			diffLines: DiffLine[];
+	  };
 
 export const diffLinesReducer: Reducer<DiffLine[], DiffLinesActions> = (state, action) => {
 	if (action.type === "assign_bucket") {
 		return state.map((dl, idx) => (idx === action.idx ? { ...dl, bucket: action.bucket } : dl));
+	} else if (action.type === "set_new_diff_lines") {
+		return action.diffLines;
 	}
 
-	assertNever(action.type);
+	assertNever(action);
 };
 
 export function assertNever(x: never): never {
 	throw new Error("never");
 }
+
+// ---
+
+export const fetchDiffLines = async () => {
+	const projectPath = "/Users/kipras"; // TODO
+	// const gitCmd = `git --git-dir="$HOME/.dotfiles/" --work-tree="$HOME"` // TODO
+	const gitCmd = `git --git-dir="/Users/kipras/.dotfiles/" --work-tree="/Users/kipras"`; // TODO
+	const dotGitDir = `.dotfiles`;
+
+	const data = await fetch(`/api/v1/diff-lines?projectPath=${projectPath}&gitCmd=${gitCmd}&dotGitDir=${dotGitDir}`, {
+		method: "GET",
+	}).then((res) => res.json());
+
+	/**
+	 * TODO: implement multi-file, multi-hunk display
+	 */
+	// const file = data[Date.now() % data.length];
+	// const hunk: string[] = file.hunks[Date.now() % file.hunks.length];
+	const file = data[0];
+	const hunk: string[] = file.hunks[0];
+
+	/** remap */
+	const remappedHunk = hunk.map(
+		(line, idx): DiffLine => ({
+			lineStr: line,
+			filePos: /** TODO FIXME */ {
+				filepath: file.to,
+				line: idx,
+				col: 0,
+			},
+			bucket: -1,
+		})
+	);
+
+	return remappedHunk;
+};
 
 // ---
 
