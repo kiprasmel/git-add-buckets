@@ -45,7 +45,10 @@ function App() {
 				dispatchBuckets={dispatchBuckets}
 				selectedBucket={selectedBucket}
 				setSelectedBucket={setSelectedBucket}
-				diffLines={diffFiles.flat().flat()}
+				diffLines={diffFiles
+					.map((dl) => dl.hunks)
+					.flat()
+					.flat()}
 			></Buckets>
 
 			<section
@@ -54,28 +57,57 @@ function App() {
 					height: 100%;
 
 					overflow-y: scroll;
+
+					/* keep margins between files */
+					& > * + * {
+						margin-top: 5em !important;
+					}
 				`}
 			>
-				{diffFiles.map((file, fileIdx) =>
-					file.map((hunk, hunkIdx) => (
+				{/* files */}
+				{diffFiles.map((file, fileIdx) => (
+					<div
+						className={css`
+							margin: 1em;
+						`}
+					>
+						{/* filename */}
+						{file.eq ? (
+							<pre>{file.to}</pre>
+						) : (
+							<pre>
+								<span>{file.from}</span> <span>{"->"}</span> <span>{file.to}</span>
+							</pre>
+						)}
+
+						{/* hunks of file */}
 						<div
 							className={css`
-								border: 1px solid black;
-								border-radius: 6px;
-								margin: 1em;
+								& > * + * {
+									margin-top: 1em;
+								}
 							`}
 						>
-							<DiffLines //
-								diffLines={hunk}
-								dispatchDiffFiles={dispatchDiffFiles}
-								fileIdx={fileIdx}
-								hunkIdx={hunkIdx}
-								selectedBucket={selectedBucket}
-								bucketCount={buckets.length}
-							></DiffLines>
+							{file.hunks.map((hunk, hunkIdx) => (
+								<div
+									className={css`
+										border: 1px solid black;
+										border-radius: 6px;
+									`}
+								>
+									<DiffLines //
+										diffLines={hunk}
+										dispatchDiffFiles={dispatchDiffFiles}
+										fileIdx={fileIdx}
+										hunkIdx={hunkIdx}
+										selectedBucket={selectedBucket}
+										bucketCount={buckets.length}
+									></DiffLines>
+								</div>
+							))}
 						</div>
-					))
-				)}
+					</div>
+				))}
 			</section>
 		</main>
 	);
@@ -121,15 +153,18 @@ export const diffFilesReducer: Reducer<DiffFile[], DiffFilesActions> = (state, a
 		return state.map((file, fileIdx) =>
 			fileIdx !== action.fileIdx
 				? file
-				: file.map((hunk, hunkIdx) =>
-						hunkIdx !== action.hunkIdx
-							? hunk
-							: hunk.map((line, lineIdx) =>
-									lineIdx !== action.lineIdx //
-										? line
-										: { ...line, bucket: action.bucket }
-							  )
-				  )
+				: {
+						...file,
+						hunks: file.hunks.map((hunk, hunkIdx) =>
+							hunkIdx !== action.hunkIdx
+								? hunk
+								: hunk.map((line, lineIdx) =>
+										lineIdx !== action.lineIdx //
+											? line
+											: { ...line, bucket: action.bucket }
+								  )
+						),
+				  }
 		);
 	} else if (action.type === "set_new_diff_files") {
 		return action.diffFiles;
@@ -158,8 +193,9 @@ export const fetchDiffFiles = async (): Promise<DiffFile[]> => {
 	).then((res) => res.json());
 
 	/** remap */
-	const remappedFiles: DiffFile[] = data.map((file) =>
-		file.hunks.map((hunk: RawDiffHunk) =>
+	const remappedFiles: DiffFile[] = data.map((file) => ({
+		...file,
+		hunks: file.hunks.map((hunk: RawDiffHunk) =>
 			hunk.map(
 				(line, idx): DiffLine => ({
 					lineStr: line,
@@ -171,8 +207,8 @@ export const fetchDiffFiles = async (): Promise<DiffFile[]> => {
 					bucket: -1,
 				})
 			)
-		)
-	);
+		),
+	}));
 
 	return remappedFiles;
 };
@@ -204,7 +240,9 @@ export type RawDiffFile = {
 	pre_hunk_lines: string[];
 	hunks: RawDiffHunk[];
 };
-export type DiffFile = DiffHunk[];
+export type DiffFile = Pick<RawDiffFile, "from" | "to" | "eq" | "pre_hunk_lines"> & {
+	hunks: DiffHunk[];
+};
 
 export type Bucket = {
 	// addedPatchLines: DiffLine[];
@@ -481,7 +519,13 @@ const TEST_DIFFHUNKS: DiffHunk[] = [
 ];
 
 const TEST_DIFFFILES: DiffFile[] = [
-	TEST_DIFFHUNKS, //
+	{
+		from: "foo",
+		to: "foo",
+		eq: true,
+		pre_hunk_lines: [],
+		hunks: TEST_DIFFHUNKS, //
+	},
 ];
 
 export type DiffLinesProps = {
