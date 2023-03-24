@@ -45,10 +45,7 @@ function App() {
 				dispatchBuckets={dispatchBuckets}
 				selectedBucket={selectedBucket}
 				setSelectedBucket={setSelectedBucket}
-				diffLines={diffFiles
-					.map((dl) => dl.hunks)
-					.flat()
-					.flat()}
+				diffFiles={diffFiles}
 			></Buckets>
 
 			<section
@@ -122,14 +119,36 @@ export type BucketsReducerActions =
 	| {
 			type: "perform_commit";
 			idx: number;
-			diffLinesThatSelectedMe: DiffLine[];
+			diffFiles: DiffFile[];
+			commitMessage: Bucket["commitMessage"];
 	  };
 
 export const bucketsReducer: Reducer<Bucket[], BucketsReducerActions> = (state, action) => {
 	if (action.type === "change_commit_msg") {
 		return state.map((b, i) => (i === action.idx ? { ...b, commitMessage: action.message } : b));
 	} else if (action.type === "perform_commit") {
-		throw new Error("TODO: perform commit");
+		const gitAddEditLines: GitAddEditLines = createPatchFromSelectedDiffs(action.diffFiles, action.idx);
+
+		console.log({ gitAddEditLines });
+
+		fetch(`/api/v1/commit-diff-lines?${commonUrlQuery}`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({
+				lines: gitAddEditLines,
+				commitMessage: action.commitMessage,
+			}),
+		})
+			.then((res) => res.json())
+			.then((x) => {
+				console.log(x);
+
+				//
+			});
+
+		return state; // TODO FIXME: adjust state based on response
 	}
 
 	assertNever(action);
@@ -179,18 +198,17 @@ export function assertNever(x: never): never {
 
 // ---
 
-export const fetchDiffFiles = async (): Promise<DiffFile[]> => {
-	const projectPath = "/Users/kipras"; // TODO
-	// const gitCmd = `git --git-dir="$HOME/.dotfiles/" --work-tree="$HOME"` // TODO
-	const gitCmd = `git --git-dir="/Users/kipras/.dotfiles/" --work-tree="/Users/kipras"`; // TODO
-	const dotGitDir = `.dotfiles`;
+const projectPath = "/Users/kipras"; // TODO
+// const gitCmd = `git --git-dir="$HOME/.dotfiles/" --work-tree="$HOME"` // TODO
+const gitCmd = `git --git-dir="/Users/kipras/.dotfiles/" --work-tree="/Users/kipras"`; // TODO
+const dotGitDir = `.dotfiles`;
 
-	const data: RawDiffFile[] = await fetch(
-		`/api/v1/diff-lines?projectPath=${projectPath}&gitCmd=${gitCmd}&dotGitDir=${dotGitDir}`,
-		{
-			method: "GET",
-		}
-	).then((res) => res.json());
+const commonUrlQuery = `projectPath=${projectPath}&gitCmd=${gitCmd}&dotGitDir=${dotGitDir}`;
+
+export const fetchDiffFiles = async (): Promise<DiffFile[]> => {
+	const data: RawDiffFile[] = await fetch(`/api/v1/diff-lines?${commonUrlQuery}`, {
+		method: "GET",
+	}).then((res) => res.json());
 
 	/** remap */
 	const remappedFiles: DiffFile[] = data.map((file) => ({
@@ -232,6 +250,7 @@ export type RawDiffHunk = string[];
 export type DiffHunk = DiffLine[];
 
 export type RawDiffFile = {
+	file_header: string;
 	raw_from: string;
 	raw_to: string;
 	from: string;
@@ -240,7 +259,10 @@ export type RawDiffFile = {
 	pre_hunk_lines: string[];
 	hunks: RawDiffHunk[];
 };
-export type DiffFile = Pick<RawDiffFile, "from" | "to" | "eq" | "pre_hunk_lines"> & {
+export type DiffFile = Pick<
+	RawDiffFile,
+	"file_header" | "raw_from" | "raw_to" | "from" | "to" | "eq" | "pre_hunk_lines"
+> & {
 	hunks: DiffHunk[];
 };
 
@@ -275,14 +297,14 @@ export type BucketsProps = {
 	setSelectedBucket: Dispatch<React.SetStateAction<number>>;
 
 	/** needed to know what lines have selected this bucket */
-	diffLines: DiffLine[];
+	diffFiles: DiffFile[];
 };
 export const Buckets: FC<BucketsProps> = ({
 	buckets = [], //
 	dispatchBuckets,
 	selectedBucket,
 	setSelectedBucket,
-	diffLines,
+	diffFiles,
 }) => {
 	return (
 		<div
@@ -322,7 +344,7 @@ export const Buckets: FC<BucketsProps> = ({
 				{buckets.map((bucket, idx) => {
 					return (
 						<BucketItem
-							diffLines={diffLines} //
+							diffFiles={diffFiles} //
 							idx={idx}
 							setSelectedBucket={setSelectedBucket}
 							selectedBucket={selectedBucket}
@@ -341,7 +363,7 @@ export const Buckets: FC<BucketsProps> = ({
 };
 
 export type BucketItemProps = {
-	diffLines: DiffLine[]; //
+	diffFiles: DiffFile[]; //
 	idx: number;
 	setSelectedBucket: Dispatch<React.SetStateAction<number>>;
 	selectedBucket: number;
@@ -350,7 +372,7 @@ export type BucketItemProps = {
 	dispatchBuckets: Dispatch<BucketsReducerActions>;
 };
 export const BucketItem: FC<BucketItemProps> = ({
-	diffLines, //
+	diffFiles, //
 	idx,
 	setSelectedBucket,
 	selectedBucket,
@@ -358,7 +380,11 @@ export const BucketItem: FC<BucketItemProps> = ({
 	bucket,
 	dispatchBuckets,
 }) => {
-	const diffLinesThatSelectedMe = diffLines.filter((dl) => dl.bucket === idx);
+	const diffLinesThatSelectedMe: DiffLine[] = diffFiles
+		.map((f) => f.hunks) //
+		.flat()
+		.flat()
+		.filter((dl) => dl.bucket === idx);
 
 	const [commitMessageBoxVisible, setCommitMessageBoxVisible] = useState<boolean>(false);
 	const commitMessageBoxRef = useRef<HTMLInputElement>(null);
@@ -429,7 +455,7 @@ export const BucketItem: FC<BucketItemProps> = ({
 											commitMessageBoxRef.current?.focus();
 										});
 									} else {
-										dispatchBuckets({ type: "perform_commit", idx, diffLinesThatSelectedMe });
+										dispatchBuckets({ type: "perform_commit", idx, diffFiles, commitMessage: bucket.commitMessage });
 									}
 								}}
 								className={css`
@@ -453,6 +479,84 @@ export const BucketItem: FC<BucketItemProps> = ({
 		</li>
 	);
 };
+
+export type GitAddEditLines = string[];
+
+/**
+ * inversely related to `parseRawDiffLines` from `parse-diff-lines`.
+ *
+ * though is more sophisticated, because only some lines need to be included.
+ * but, this is not a proper patch -- this is input for `git add -e`,
+ * which allows to e.g. delete lines to avoid adding them to the staging area,
+ * thus making things easier.
+ *
+ *
+ * TODO HUNK_HEADER_ADJUST: if inside a hunk, only some stageable lines were selected, meanwhile others werent,
+ * the patch needs to be fixed so that git can apply it.
+ *
+ * it's needed to either:
+ * a) modify the hunk header, or
+ * b) delete the lines and stuff before(?)/after them
+ *
+ * A would be better, because more proper solution,
+ * and would work better if we want to reflect changes after commit happens (we do want).
+ *
+ * idk how to even do B - weird scenarios can occur.
+ * it's pretty hard to tell what part of the hunk is needed for which parts of its stageable lines.
+ *
+ */
+export const createPatchFromSelectedDiffs = (
+	diffFiles: DiffFile[],
+	selectedBucket: DiffLine["bucket"]
+): GitAddEditLines => {
+	const lines: GitAddEditLines = [];
+
+	for (const file of diffFiles) {
+		const fileHasSelectedLines = file.hunks.some((hunk) => hunk.some((line) => line.bucket === selectedBucket));
+		if (!fileHasSelectedLines) {
+			continue;
+		}
+
+		lines.push(getFileHeader(file.raw_from, file.raw_to));
+		lines.push(...file.pre_hunk_lines);
+
+		for (const hunk of file.hunks) {
+			const hunkHeader = hunk[0];
+
+			const tmpLines = [];
+			let hasSelectedStageableLine = false;
+			for (let i = 1; i < hunk.length; i++) {
+				const diffLine = hunk[i];
+				const line = diffLine.lineStr;
+
+				if (!isLineStageable(line)) {
+					/**
+					 * add regardless, because does not matter - is only for context
+					 * tho, see also HUNK_HEADER_ADJUST
+					 */
+					tmpLines.push(line);
+				} else {
+					if (diffLine.bucket === selectedBucket) {
+						hasSelectedStageableLine = true;
+						tmpLines.push(line);
+					}
+				}
+			}
+
+			if (hasSelectedStageableLine) {
+				lines.push(hunkHeader.lineStr);
+				lines.push(...tmpLines);
+			}
+		}
+	}
+
+	return lines;
+};
+
+export const getFileHeader = (raw_from: RawDiffFile["raw_from"], raw_to: RawDiffFile["raw_to"]) =>
+	fileDiffStart + raw_from + " " + raw_to;
+
+export const fileDiffStart = "diff --git "; // TODO: import from `parse-diff-lines`
 
 export type BucketLetterProps = {
 	selectedBucket: number;
@@ -520,6 +624,9 @@ const TEST_DIFFHUNKS: DiffHunk[] = [
 
 const TEST_DIFFFILES: DiffFile[] = [
 	{
+		file_header: getFileHeader("a/foo", "b/foo"),
+		raw_from: "a/foo",
+		raw_to: "b/foo",
 		from: "foo",
 		to: "foo",
 		eq: true,

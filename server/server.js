@@ -36,7 +36,7 @@ exit 1
 
 `;
 
-	const SCRIPT_FILEPATH = path.join(projectPath, dotGitDir, "editor-script-patch-file.sh");
+	const SCRIPT_FILEPATH = path.join(projectPath, dotGitDir, "editor-script-patch-file.read.sh");
 	fs.writeFileSync(SCRIPT_FILEPATH, EDITOR_SCRIPT);
 	fs.chmodSync(SCRIPT_FILEPATH, "777");
 
@@ -84,6 +84,84 @@ exit 1
 			console.log({ rawDiffLines, diffLines });
 
 			return res.status(200).json(diffLines);
+		}
+	);
+});
+
+app.post("/api/v1/commit-diff-lines", async (req, res) => {
+	const { projectPath, gitCmd = "git", dotGitDir = ".git" } = req.query;
+
+	console.log(req.query);
+
+	const { lines, commitMessage } = req.body;
+
+	/**
+	 * create empty line, to make the patch apply-able by git.
+	 */
+	lines.push("");
+
+	const TMP_PATCH_FILE = path.join(projectPath, dotGitDir, "ADD_EDIT_TMP.patch");
+	fs.writeFileSync(TMP_PATCH_FILE, lines.join("\n"), { encoding: "utf-8" });
+
+	const PATCH_FILE = path.join(projectPath, dotGitDir, "ADD_EDIT.patch");
+
+	const EDITOR_SCRIPT = `\
+#!/bin/sh
+
+ls -la ${path.join(projectPath, dotGitDir)}
+
+[ -f "${PATCH_FILE}" ] && {
+	rm "${PATCH_FILE}"
+}
+mv "${TMP_PATCH_FILE}" "${PATCH_FILE}"
+
+`;
+
+	const SCRIPT_FILEPATH = path.join(projectPath, dotGitDir, "editor-script-patch-file.write.sh");
+
+	fs.writeFileSync(SCRIPT_FILEPATH, EDITOR_SCRIPT);
+	fs.chmodSync(SCRIPT_FILEPATH, "777");
+
+	const cmds = [gitCmd, ["add -e"]];
+	const f1 = cp.exec(
+		cmds.flat().join(" "),
+		{
+			cwd: projectPath,
+			env: {
+				// TODO: bash script that will take care, just like in git-stacked-rebase.
+				EDITOR: SCRIPT_FILEPATH,
+			},
+			// stdio: "inherit",
+		},
+		(err, stdout, stderr) => {
+			console.log({ err, stdout, stderr });
+
+			if (err || stderr) {
+				console.error({ err, stderr });
+
+				return res.status(500).json({
+					error: `writing patch for '${gitCmd} add --edit' failed.`,
+				});
+			}
+
+			/**
+			 * otherwise, if success, perform the actual commit.
+			 */
+			const f2 = cp.exec(
+				`${gitCmd} commit -m "${commitMessage}"`,
+				{
+					cwd: projectPath,
+				},
+				(err2, stdout2, stderr2) => {
+					console.log({
+						err2, //
+						stdout2,
+						stderr2,
+					});
+
+					return res.status(200).json(stdout2.split("\n"));
+				}
+			);
 		}
 	);
 });

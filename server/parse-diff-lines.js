@@ -11,20 +11,21 @@ function parseRawDiffLines(
 
 	let i = 0;
 	while (i < rawDiffLines.length) {
-		let line = rawDiffLines[i];
+		const fileHeaderLine = rawDiffLines[i];
 
-		if (!isFileStart(line)) {
+		if (!isFileStart(fileHeaderLine)) {
 			throw new Error("Un-handled scenario (file hunk did not start with `diff --git`).");
 		}
 
 		/** assumes no spaces in filenames (duh) */
-		const [raw_from, raw_to] = line.replace(fileDiffStart, "").split(" ");
+		const [raw_from, raw_to] = fileHeaderLine.replace(fileDiffStart, "").split(" ");
 
 		const from = removePathStart(raw_from, { n: 1, pathSep });
 		const to = removePathStart(raw_to, { n: 1, pathSep });
 		const eq = from === to;
 
 		let pre_hunk_lines = [];
+		let line;
 		while (i < rawDiffLines.length && (line = rawDiffLines[++i]) && !isHunkStart(line)) {
 			pre_hunk_lines.push(line);
 		}
@@ -41,6 +42,7 @@ function parseRawDiffLines(
 		}
 
 		files.push({
+			file_header: fileHeaderLine,
 			raw_from,
 			raw_to,
 			from,
