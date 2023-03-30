@@ -41,6 +41,11 @@ function parseRawDiffLines(
 			hunks.push(hunk);
 		}
 
+		const last = hunks[hunks.length - 1];
+		if (last.length === 1 && last[0] === "") {
+			hunks.pop();
+		}
+
 		files.push({
 			file_header: fileHeaderLine,
 			raw_from,

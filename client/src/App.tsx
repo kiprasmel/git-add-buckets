@@ -521,7 +521,7 @@ export const createPatchFromSelectedDiffs = (
 		lines.push(...file.pre_hunk_lines);
 
 		for (const hunk of file.hunks) {
-			lines.push(...convertUIHunkToGitApplyableHunk(hunk, selectedBucket));
+			lines.push(...convertUIHunkToGitApplyableHunk(hunk, selectedBucket).lines);
 		}
 	}
 
@@ -538,11 +538,13 @@ export const createPatchFromSelectedDiffs = (
  * what the user sees in the UI,
  * back into what `git add --edit` can consume.
  *
+ * this is what the returned `lines` are.
+ *
  */
 export const convertUIHunkToGitApplyableHunk = (
 	hunk: DiffHunk, //
 	selectedBucket: number
-): GitAddEditLines => {
+) => {
 	const lines: GitAddEditLines = [];
 
 	const hunkHeader = hunk[0];
@@ -601,18 +603,25 @@ export const convertUIHunkToGitApplyableHunk = (
 		}
 	}
 
-	if (hasSelectedStageableLine) {
-		const adjustedHunkHeader = adjustHunkHeaderBecauseOfUnselectedLines(
-			hunkHeader.lineStr,
-			unselectedAdds,
-			unselectedDels
-		);
+	const adjustedHunkHeader: DiffHunk[0]["lineStr"] = adjustHunkHeaderBecauseOfUnselectedLines(
+		hunkHeader.lineStr,
+		unselectedAdds,
+		unselectedDels
+	);
 
+	if (hasSelectedStageableLine) {
 		lines.push(adjustedHunkHeader);
 		lines.push(...tmpLines);
 	}
 
-	return lines;
+	return {
+		lines, //
+		hasSelectedStageableLine,
+		//
+		unselectedAdds,
+		unselectedDels,
+		adjustedHunkHeader,
+	};
 };
 
 export const getFileHeader = (raw_from: RawDiffFile["raw_from"], raw_to: RawDiffFile["raw_to"]) =>
@@ -821,6 +830,7 @@ export const FilesWithDiffLines: FC<FilesWithDiffLinesProps> = ({}) => {
 };
 
 const TEST_DIFFLINES: DiffLine[] = [
+	{ lineStr: "@@ -1,3 +1,3 @@ xlsattr() {", filePos: { filepath: "foo.ts", line: 0, col: 1 }, bucket: -1 },
 	{ lineStr: " foo", filePos: { filepath: "foo.ts", line: 1, col: 1 }, bucket: -1 },
 	{ lineStr: "-bar", filePos: { filepath: "foo.ts", line: 2, col: 1 }, bucket: -1 },
 	{ lineStr: "+baz", filePos: { filepath: "foo.ts", line: 3, col: 1 }, bucket: -1 },
@@ -865,6 +875,10 @@ export const DiffLines: FC<DiffLinesProps> = ({
 }) => {
 	const currentBucketIsSelected = (lineBucket: number): boolean => lineBucket !== -1 && lineBucket === selectedBucket;
 
+	if (!diffLines.length || (diffLines.length === 1 && !diffLines[0].lineStr)) {
+		return null;
+	}
+
 	return (
 		<>
 			<ul>
@@ -886,7 +900,7 @@ export const DiffLines: FC<DiffLinesProps> = ({
 						? _line
 						: {
 								..._line, //
-								lineStr: convertUIHunkToGitApplyableHunk(diffLines, selectedBucket)[0] || _line.lineStr,
+								lineStr: convertUIHunkToGitApplyableHunk(diffLines, selectedBucket).adjustedHunkHeader,
 						  };
 
 					return (
