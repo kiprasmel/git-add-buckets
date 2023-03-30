@@ -523,6 +523,13 @@ export const createPatchFromSelectedDiffs = (
 		for (const hunk of file.hunks) {
 			const hunkHeader = hunk[0];
 
+			/**
+			 * the hunk header will need to be adjusted
+			 * based on how many additions and deletions were not selected.
+			 */
+			let unselectedAdds = 0;
+			let unselectedDels = 0;
+
 			const tmpLines = [];
 			let hasSelectedStageableLine = false;
 			for (let i = 1; i < hunk.length; i++) {
@@ -533,18 +540,42 @@ export const createPatchFromSelectedDiffs = (
 					/**
 					 * add regardless, because does not matter - is only for context
 					 * tho, see also HUNK_HEADER_ADJUST
+					 *
+					 * if we don't add the line, we'd have to adjust the hunk header.
 					 */
 					tmpLines.push(line);
 				} else {
+					/**
+					 * is stage-able, i.e. is either add or del
+					 */
 					if (diffLine.bucket === selectedBucket) {
 						hasSelectedStageableLine = true;
 						tmpLines.push(line);
+					} else {
+						/**
+						 * is stage-able, but is not selected,
+						 * thus we need to adjust the hunk header.
+						 */
+						if (isAdd(line)) {
+							++unselectedAdds;
+						} else if (isDel(line)) {
+							++unselectedDels;
+						} else {
+							const msg = `BUG: line is stage-able, but is neither an addition or a deletion. line = "${line}"`;
+							throw new Error(msg);
+						}
 					}
 				}
 			}
 
 			if (hasSelectedStageableLine) {
-				lines.push(hunkHeader.lineStr);
+				const adjustedHunkHeader = adjustHunkHeaderBecauseOfUnselectedLines(
+					hunkHeader.lineStr, //
+					unselectedAdds,
+					unselectedDels
+				);
+
+				lines.push(adjustedHunkHeader);
 				lines.push(...tmpLines);
 			}
 		}
@@ -557,6 +588,137 @@ export const getFileHeader = (raw_from: RawDiffFile["raw_from"], raw_to: RawDiff
 	fileDiffStart + raw_from + " " + raw_to;
 
 export const fileDiffStart = "diff --git "; // TODO: import from `parse-diff-lines`
+
+/** --- */
+
+/**
+ * when the hunk header is created,
+ * git obviously assumes that all stage-able lines are selected.
+ *
+ * however, we allow selecting all, some, or none of the stage-able lines.
+ *
+ * thus, for every stage-able line, if it is not selected:
+ * 		if isDel:
+ * 			.
+ * 		else if isAdd:
+ * 			.
+ *
+ * (see math below)
+ *
+ *
+ *
+ * TODO TEST
+ *
+ */
+export const adjustHunkHeaderBecauseOfUnselectedLines = (
+	origHunkHeader: DiffHunk[0]["lineStr"], //
+	unselectedAdds: number,
+	unselectedDels: number
+) => {
+	const {
+		oldStart, //
+		oldCount,
+		newStart,
+		newCount,
+		rawFnName,
+	} = extractHunkHeaderInfo(origHunkHeader);
+
+	const adjustedHunkHeader = createHunkHeaderFromInfo(
+		oldStart, //
+		oldCount - unselectedDels,
+		newStart,
+		/**
+		 * TODO: for math to work out, specifically for `+ unselectedDels`,
+		 * we need to keep the unselected `isDel` lines in the diff,
+		 * otherwise will end up wrong.
+		 *
+		 * i.e., when you do not selected a deleted line,
+		 * you're saying that it's still there,
+		 * and both the hunk's header & the hunk itself need to reflect that.
+		 *
+		 * UPDATE:
+		 * looks like if the line is kept (i.e. deletion not selected),
+		 * and given that all the other lines were selected,
+		 * then the `newCount` stays the same, and the `oldCount` gets reduced instead.
+		 *
+		 * thus, instead of
+		 * ```
+		 * {
+		 * 		oldCount: oldCount,
+		 * 		newCount: newCount - unselectedAdds + unselectedDels,
+		 * }
+		 * ```
+		 *
+		 * it is now
+		 * ```
+		 * {
+		 * 		oldCount: oldCount - unselectedDels,
+		 * 		newCount: newCount - unselectedAdds,
+		 * }
+		 * ```
+		 *
+		 * so math is updated. the TODO still stands.
+		 *
+		 */
+		newCount - unselectedAdds,
+		rawFnName
+	);
+
+	return adjustedHunkHeader;
+};
+
+/**
+ * ```
+ * @@ -643,20 +643,20 @@ xlsattr() {
+ * ```
+ *
+ * ```
+ * {
+ * 	rawInfo: "-643,20 +643,20",
+ * 	rawFnName: "xlsattr() {",
+ *
+ * 	oldStart: 643,
+ * 	oldCount: 20,
+ * 	newStart: 643,
+ * 	newCount: 20
+ * }
+ * ```
+ *
+ * TODO TEST
+ */
+export const extractHunkHeaderInfo = (hunkHeader: DiffHunk[0]["lineStr"]) => {
+	const [, rawInfo, rawFnName] = hunkHeader.split("@@ ").map((x) => x.trim());
+
+	const [oldStart, oldCount, newStart, newCount] = rawInfo
+		.split(" ")
+		.map((info) =>
+			info
+				.slice(1) /** remove beginning + or - */
+				.split(",")
+		)
+		.flat()
+		.map(Number);
+
+	return {
+		rawInfo, //
+		rawFnName,
+		//
+		oldStart,
+		oldCount,
+		newStart,
+		newCount,
+	};
+};
+
+export const createHunkHeaderFromInfo = (
+	oldStart: number, //
+	oldCount: number,
+	newStart: number,
+	newCount: number,
+	rawFnName: string
+) => `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@ ${rawFnName}`;
+
+/** --- */
 
 export type BucketLetterProps = {
 	selectedBucket: number;
@@ -721,7 +883,9 @@ export const DiffLines: FC<DiffLinesProps> = ({
 	);
 };
 
-export const isLineStageable = (line: string): boolean => line[0] === "-" || line[0] === "+";
+export const isAdd = (line: string): boolean => line[0] === "+";
+export const isDel = (line: string): boolean => line[0] === "-";
+export const isLineStageable = (line: string): boolean => isDel(line) || isAdd(line);
 
 export const lineToProperVisualSpacing = (line: string): (string | JSX.Element)[] => {
 	const jsx = [];
