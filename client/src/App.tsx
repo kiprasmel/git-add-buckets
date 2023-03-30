@@ -560,6 +560,15 @@ export const createPatchFromSelectedDiffs = (
 							++unselectedAdds;
 						} else if (isDel(line)) {
 							++unselectedDels;
+
+							/**
+							 * since line would be deleted, but that deletion is not selected,
+							 * it means that the line is supposed to still be there.
+							 *
+							 * though, needs to be converted from a deletion to a regular line
+							 */
+							const deletedToRegularLine = convertStageableToRegular(line);
+							tmpLines.push(deletedToRegularLine);
 						} else {
 							const msg = `BUG: line is stage-able, but is neither an addition or a deletion. line = "${line}"`;
 							throw new Error(msg);
@@ -625,7 +634,9 @@ export const adjustHunkHeaderBecauseOfUnselectedLines = (
 
 	const adjustedHunkHeader = createHunkHeaderFromInfo(
 		oldStart, //
-		oldCount - unselectedDels,
+		// oldCount, // v1
+		// oldCount - unselectedDels, // v2
+		oldCount, // v3
 		newStart,
 		/**
 		 * TODO: for math to work out, specifically for `+ unselectedDels`,
@@ -659,8 +670,23 @@ export const adjustHunkHeaderBecauseOfUnselectedLines = (
 		 *
 		 * so math is updated. the TODO still stands.
 		 *
+		 *
+		 * UPDATE 2 (v3):
+		 *
+		 * the previous update does not work.
+		 *
+		 * now that i've implemented the TODO,
+		 * it looks like the oldCount never needs to change
+		 * (because we always add deleted lines, whether selected or not,
+		 * and add them as deletion `-` if selected, or regular `` if not),
+		 * thus oldCount is not affected.
+		 *
+		 *
+		 *
 		 */
-		newCount - unselectedAdds,
+		// newCount - unselectedAdds + unselectedDels, // v1
+		// newCount - unselectedAdds, // v2
+		newCount - unselectedAdds + unselectedDels, // v3
 		rawFnName
 	);
 
@@ -886,6 +912,8 @@ export const DiffLines: FC<DiffLinesProps> = ({
 export const isAdd = (line: string): boolean => line[0] === "+";
 export const isDel = (line: string): boolean => line[0] === "-";
 export const isLineStageable = (line: string): boolean => isDel(line) || isAdd(line);
+
+export const convertStageableToRegular = (line: string): string => " " + line.slice(1);
 
 export const lineToProperVisualSpacing = (line: string): (string | JSX.Element)[] => {
 	const jsx = [];
