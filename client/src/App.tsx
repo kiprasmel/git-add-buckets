@@ -521,73 +521,95 @@ export const createPatchFromSelectedDiffs = (
 		lines.push(...file.pre_hunk_lines);
 
 		for (const hunk of file.hunks) {
-			const hunkHeader = hunk[0];
+			lines.push(...convertUIHunkToGitApplyableHunk(hunk, selectedBucket));
+		}
+	}
 
+	return lines;
+};
+
+/**
+ * we receive the raw hunk from the `.git/ADD_EDIT.patch` generated via `git add --edit`.
+ *
+ * in the UI, we allow making modification to the hunk,
+ * e.g. selecting or unselecting some stage-able lines.
+ *
+ * eventually, we need to convert from:
+ * what the user sees in the UI,
+ * back into what `git add --edit` can consume.
+ *
+ */
+export const convertUIHunkToGitApplyableHunk = (
+	hunk: DiffHunk, //
+	selectedBucket: number
+): GitAddEditLines => {
+	const lines: GitAddEditLines = [];
+
+	const hunkHeader = hunk[0];
+
+	/**
+	 * the hunk header will need to be adjusted
+	 * based on how many additions and deletions were not selected.
+	 */
+	let unselectedAdds = 0;
+	let unselectedDels = 0;
+
+	const tmpLines = [];
+	let hasSelectedStageableLine = false;
+	for (let i = 1; i < hunk.length; i++) {
+		const diffLine = hunk[i];
+		const line = diffLine.lineStr;
+
+		if (!isLineStageable(line)) {
 			/**
-			 * the hunk header will need to be adjusted
-			 * based on how many additions and deletions were not selected.
+			 * add regardless, because does not matter - is only for context
+			 * tho, see also HUNK_HEADER_ADJUST
+			 *
+			 * if we don't add the line, we'd have to adjust the hunk header.
 			 */
-			let unselectedAdds = 0;
-			let unselectedDels = 0;
+			tmpLines.push(line);
+		} else {
+			/**
+			 * is stage-able, i.e. is either add or del
+			 */
+			if (diffLine.bucket === selectedBucket) {
+				hasSelectedStageableLine = true;
+				tmpLines.push(line);
+			} else {
+				/**
+				 * is stage-able, but is not selected,
+				 * thus we need to adjust the hunk header.
+				 */
+				if (isAdd(line)) {
+					++unselectedAdds;
+				} else if (isDel(line)) {
+					++unselectedDels;
 
-			const tmpLines = [];
-			let hasSelectedStageableLine = false;
-			for (let i = 1; i < hunk.length; i++) {
-				const diffLine = hunk[i];
-				const line = diffLine.lineStr;
-
-				if (!isLineStageable(line)) {
 					/**
-					 * add regardless, because does not matter - is only for context
-					 * tho, see also HUNK_HEADER_ADJUST
+					 * since line would be deleted, but that deletion is not selected,
+					 * it means that the line is supposed to still be there.
 					 *
-					 * if we don't add the line, we'd have to adjust the hunk header.
+					 * though, needs to be converted from a deletion to a regular line
 					 */
-					tmpLines.push(line);
+					const deletedToRegularLine = convertStageableToRegular(line);
+					tmpLines.push(deletedToRegularLine);
 				} else {
-					/**
-					 * is stage-able, i.e. is either add or del
-					 */
-					if (diffLine.bucket === selectedBucket) {
-						hasSelectedStageableLine = true;
-						tmpLines.push(line);
-					} else {
-						/**
-						 * is stage-able, but is not selected,
-						 * thus we need to adjust the hunk header.
-						 */
-						if (isAdd(line)) {
-							++unselectedAdds;
-						} else if (isDel(line)) {
-							++unselectedDels;
-
-							/**
-							 * since line would be deleted, but that deletion is not selected,
-							 * it means that the line is supposed to still be there.
-							 *
-							 * though, needs to be converted from a deletion to a regular line
-							 */
-							const deletedToRegularLine = convertStageableToRegular(line);
-							tmpLines.push(deletedToRegularLine);
-						} else {
-							const msg = `BUG: line is stage-able, but is neither an addition or a deletion. line = "${line}"`;
-							throw new Error(msg);
-						}
-					}
+					const msg = `BUG: line is stage-able, but is neither an addition or a deletion. line = "${line}"`;
+					throw new Error(msg);
 				}
 			}
-
-			if (hasSelectedStageableLine) {
-				const adjustedHunkHeader = adjustHunkHeaderBecauseOfUnselectedLines(
-					hunkHeader.lineStr, //
-					unselectedAdds,
-					unselectedDels
-				);
-
-				lines.push(adjustedHunkHeader);
-				lines.push(...tmpLines);
-			}
 		}
+	}
+
+	if (hasSelectedStageableLine) {
+		const adjustedHunkHeader = adjustHunkHeaderBecauseOfUnselectedLines(
+			hunkHeader.lineStr,
+			unselectedAdds,
+			unselectedDels
+		);
+
+		lines.push(adjustedHunkHeader);
+		lines.push(...tmpLines);
 	}
 
 	return lines;
@@ -846,8 +868,26 @@ export const DiffLines: FC<DiffLinesProps> = ({
 	return (
 		<>
 			<ul>
-				{diffLines.map((line, idx) => {
-					const isStageable: boolean = isLineStageable(line.lineStr);
+				{diffLines.map((_line, idx) => {
+					const isStageable: boolean = isLineStageable(_line.lineStr);
+
+					/**
+					 * if line is the hunk header line (1st line in DiffHunk by our convention),
+					 * we want to reflect the lineStr of the hunk header inside the UI.
+					 *
+					 * we don't want this for other lines obviously,
+					 * because e.g. all stage-able lines that are not selected in the UI
+					 * would simply disappear (as they should in the final hunk that's applyable by git,
+					 * but shouldn't in the UI - otherwise the UI is pointless).
+					 *
+					 */
+					const isHunkHeader = idx === 0;
+					const line: DiffLine = !isHunkHeader
+						? _line
+						: {
+								..._line, //
+								lineStr: convertUIHunkToGitApplyableHunk(diffLines, selectedBucket)[0] || _line.lineStr,
+						  };
 
 					return (
 						<li>
