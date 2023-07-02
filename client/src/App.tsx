@@ -205,6 +205,10 @@ const dotGitDir = `.dotfiles`;
 
 const commonUrlQuery = `projectPath=${projectPath}&gitCmd=${gitCmd}&dotGitDir=${dotGitDir}`;
 
+export type FetchDiffLinesOpts = {
+	urlQuery: string;
+}
+//export const fetchDiffFiles = async ({ urlQuery }: FetchDiffLinesOpts): Promise<DiffFile[]> => {
 export const fetchDiffFiles = async (): Promise<DiffFile[]> => {
 	const data: RawDiffFile[] = await fetch(`/api/v1/diff-lines?${commonUrlQuery}`, {
 		method: "GET",
