@@ -4,6 +4,9 @@
 	"main": "index.js",
 	"author": "Kipras Melnikovas <kipras@kipras.org> (http://kipras.org/)",
 	"license": "UNLICENSED",
+	"scripts": {
+		"start": "node server.js"
+	},
 	"dependencies": {
 		"express": "4.18.2"
 	},
