@@ -26,7 +26,19 @@ function App() {
 				"App",
 				css`
 					width: 100%;
-					height: 100vh;
+
+					display: flex;
+					flex-direction: column;
+				`
+			)}
+		>
+			<div id="project-config">
+				<h2>project config</h2>
+			</div>
+
+			<div
+				className={css`
+					width: 100%;
 
 					display: flex;
 					flex-direction: row;
@@ -34,78 +46,80 @@ function App() {
 
 					& > * {
 						flex-grow: 1;
-						height: 100%;
+						max-height: 100vh;
+						overflow-y: scroll;
 						border: 4px solid black;
 					}
-				`
-			)}
-		>
-			<Buckets
-				buckets={buckets} //
-				dispatchBuckets={dispatchBuckets}
-				selectedBucket={selectedBucket}
-				setSelectedBucket={setSelectedBucket}
-				diffFiles={diffFiles}
-			></Buckets>
-
-			<section
-				className={css`
-					width: 70%;
-					height: 100%;
-
-					overflow-y: scroll;
-
-					/* keep margins between files */
-					& > * + * {
-						margin-top: 5em !important;
-					}
-				`}
+					`
+				}
 			>
-				{/* files */}
-				{diffFiles.map((file, fileIdx) => (
-					<div
-						className={css`
-							margin: 1em;
-						`}
-					>
-						{/* filename */}
-						{file.eq ? (
-							<pre>{file.to}</pre>
-						) : (
-							<pre>
-								<span>{file.from}</span> <span>{"->"}</span> <span>{file.to}</span>
-							</pre>
-						)}
+				<Buckets
+					buckets={buckets} //
+					dispatchBuckets={dispatchBuckets}
+					selectedBucket={selectedBucket}
+					setSelectedBucket={setSelectedBucket}
+					diffFiles={diffFiles}
+				></Buckets>
 
-						{/* hunks of file */}
+				<section
+					className={css`
+						width: 70%;
+						height: 100%;
+
+						overflow-y: scroll;
+
+						/* keep margins between files */
+						& > * + * {
+							margin-top: 5em !important;
+						}
+					`}
+				>
+					{/* files */}
+					{diffFiles.map((file, fileIdx) => (
 						<div
 							className={css`
-								& > * + * {
-									margin-top: 1em;
-								}
+								margin: 1em;
 							`}
 						>
-							{file.hunks.map((hunk, hunkIdx) => (
-								<div
-									className={css`
-										border: 1px solid black;
-										border-radius: 6px;
-									`}
-								>
-									<DiffLines //
-										diffLines={hunk}
-										dispatchDiffFiles={dispatchDiffFiles}
-										fileIdx={fileIdx}
-										hunkIdx={hunkIdx}
-										selectedBucket={selectedBucket}
-										bucketCount={buckets.length}
-									></DiffLines>
-								</div>
-							))}
+							{/* filename */}
+							{file.eq ? (
+								<pre>{file.to}</pre>
+							) : (
+								<pre>
+									<span>{file.from}</span> <span>{"->"}</span> <span>{file.to}</span>
+								</pre>
+							)}
+
+							{/* hunks of file */}
+							<div
+								className={css`
+									& > * + * {
+										margin-top: 1em;
+									}
+								`}
+							>
+								{file.hunks.map((hunk, hunkIdx) => (
+									<div
+										className={css`
+											border: 1px solid black;
+											border-radius: 6px;
+										`}
+									>
+										<DiffLines //
+											diffLines={hunk}
+											dispatchDiffFiles={dispatchDiffFiles}
+											fileIdx={fileIdx}
+											hunkIdx={hunkIdx}
+											selectedBucket={selectedBucket}
+											bucketCount={buckets.length}
+										></DiffLines>
+									</div>
+								))}
+							</div>
 						</div>
-					</div>
-				))}
-			</section>
+					))}
+				</section>
+			</div>
 		</main>
 	);
 }
@@ -202,6 +216,10 @@ const projectPath = "/Users/kipras"; // TODO
 // const gitCmd = `git --git-dir="$HOME/.dotfiles/" --work-tree="$HOME"` // TODO
 const gitCmd = `git --git-dir="/Users/kipras/.dotfiles/" --work-tree="/Users/kipras"`; // TODO
 const dotGitDir = `.dotfiles`;
+
+// const projectPath = "/Users/kipras/projects/git-add-buckets"; // path.resolve(__dirname)
+// const gitCmd = `git`;
+// const dotGitDir = `.git`;
 
 const commonUrlQuery = `projectPath=${projectPath}&gitCmd=${gitCmd}&dotGitDir=${dotGitDir}`;
 
@@ -776,7 +794,24 @@ export const createHunkHeaderFromInfo = (
 	oldCount: number,
 	newStart: number,
 	newCount: number,
-	rawFnName: string
+	rawFnName?: string
+	/**
+	 * TODO FIXME: rawFnName can be undefined
+	 *
+	 * rename to extraContext
+	 * see if @@ is included in end even if undefined (prolly yes)
+	 * adjust here & in other places
+	 *
+	 * (other)
+	 * TODO FIXME: NaN values sometimes, e.g. for submodules
+	 *
+	 * (other)
+	 * TODO: diff header when changes added to multiple buckets - how to display?
+	 * currently by default separate for each.
+	 * but obv if tries to apply one after another - fails.
+	 * (tho failing - separate problem prolly, since didn't update the state after committing)
+	 *
+	 */
 ) => `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@ ${rawFnName}`;
 
 /** --- */
