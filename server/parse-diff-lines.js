@@ -67,7 +67,7 @@ const isFileStart = (line) => line.startsWith(fileDiffStart);
 /** remove 1st n fragments from path */
 const removePathStart = (pathLike, { n = 1, pathSep }) => pathLike.split(pathSep).slice(n).join(pathSep);
 
-const isHunkStart = (line) => line.startsWith("@@ ");
+const isHunkStart = (line) => line.startsWith("@@ -");
 
 module.exports = {
 	parseRawDiffLines,

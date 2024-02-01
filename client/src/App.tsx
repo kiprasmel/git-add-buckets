@@ -263,6 +263,7 @@ export const fetchDiffFiles = async (): Promise<DiffFile[]> => {
 						col: 0,
 					},
 					bucket: BUCKET_NONE,
+					attrs: inferDiffLineAttrs(line),
 				})
 			)
 		),
@@ -282,9 +283,34 @@ export type FilePos = {
 export type DiffLine = {
 	lineStr: string;
 	filePos: FilePos;
+	attrs: DiffLineAttr;
 
 	bucket: number;
 };
+
+export const isHunkStart = (line: string): boolean => line.startsWith("@@ -");
+export const isAdd = (line: string): boolean => line[0] === "+";
+export const isDel = (line: string): boolean => line[0] === "-";
+export const isLineStageable = (line: string): boolean => isDel(line) || isAdd(line);
+
+export const enum DiffLineAttr {
+	NONE = 0,
+	IS_HUNK_HEADER = 1 << 0,
+	IS_ADD = 1 << 1,
+	IS_DEL = 1 << 2,
+	IS_STAGEABLE = 1 << 3,
+};
+
+export function inferDiffLineAttrs(line: DiffLine["lineStr"]): DiffLineAttr {
+	let attrs: DiffLineAttr = 0;
+
+	if (isHunkStart(line)) attrs |= DiffLineAttr.IS_HUNK_HEADER;
+	if (isAdd(line)) attrs |= DiffLineAttr.IS_ADD;
+	if (isDel(line)) attrs |= DiffLineAttr.IS_DEL;
+	if (isLineStageable(line)) attrs |= DiffLineAttr.IS_STAGEABLE;
+
+	return attrs;
+}
 
 export type RawDiffHunk = string[];
 export type DiffHunk = DiffLine[];
@@ -607,8 +633,9 @@ export const convertUIHunkToGitApplyableHunk = (
 	for (let i = 1; i < hunk.length; i++) {
 		const diffLine = hunk[i];
 		const line = diffLine.lineStr;
+		const { attrs } = diffLine;
 
-		if (!isLineStageable(line)) {
+		if (!(attrs & DiffLineAttr.IS_STAGEABLE)) {
 			/**
 			 * add regardless, because does not matter - is only for context
 			 * tho, see also HUNK_HEADER_ADJUST
@@ -628,9 +655,9 @@ export const convertUIHunkToGitApplyableHunk = (
 				 * is stage-able, but is not selected,
 				 * thus we need to adjust the hunk header.
 				 */
-				if (isAdd(line)) {
+				if (attrs & DiffLineAttr.IS_ADD) {
 					++unselectedAdds;
-				} else if (isDel(line)) {
+				} else if (attrs & DiffLineAttr.IS_DEL) {
 					++unselectedDels;
 
 					/**
@@ -892,13 +919,18 @@ export const FilesWithDiffLines: FC<FilesWithDiffLinesProps> = ({}) => {
 
 export const BUCKET_NONE = -1;
 
+const diffLine = (data: Omit<DiffLine, "bucket" | "attrs"> & Partial<Pick<DiffLine, "bucket">>): DiffLine => ({
+	...data,
+	bucket: data.bucket ?? BUCKET_NONE,
+	attrs: inferDiffLineAttrs(data.lineStr),
+});
 const TEST_DIFFLINES: DiffLine[] = [
-	{ lineStr: "@@ -1,3 +1,3 @@ xlsattr() {", filePos: { filepath: "foo.ts", line: 0, col: 1 }, bucket: BUCKET_NONE },
-	{ lineStr: " foo", filePos: { filepath: "foo.ts", line: 1, col: 1 }, bucket: BUCKET_NONE },
-	{ lineStr: "-bar", filePos: { filepath: "foo.ts", line: 2, col: 1 }, bucket: BUCKET_NONE },
-	{ lineStr: "+baz", filePos: { filepath: "foo.ts", line: 3, col: 1 }, bucket: BUCKET_NONE },
-	{ lineStr: "+yeet", filePos: { filepath: "foo.ts", line: 4, col: 1 }, bucket: BUCKET_NONE },
-	{ lineStr: "    fizz", filePos: { filepath: "foo.ts", line: 1, col: 1 }, bucket: BUCKET_NONE },
+	diffLine({ lineStr: "@@ -1,3 +1,3 @@ xlsattr() {", filePos: { filepath: "foo.ts", line: 0, col: 1 }}),
+	diffLine({ lineStr: " foo", filePos: { filepath: "foo.ts", line: 1, col: 1 } }),
+	diffLine({ lineStr: "-bar", filePos: { filepath: "foo.ts", line: 2, col: 1 } }),
+	diffLine({ lineStr: "+baz", filePos: { filepath: "foo.ts", line: 3, col: 1 } }),
+	diffLine({ lineStr: "+yeet", filePos: { filepath: "foo.ts", line: 4, col: 1 } }),
+	diffLine({ lineStr: "    fizz", filePos: { filepath: "foo.ts", line: 1, col: 1 } }),
 ];
 
 const TEST_DIFFHUNKS: DiffHunk[] = [
@@ -956,7 +988,12 @@ export const DiffLines: FC<DiffLinesProps> = ({
 					 * but shouldn't in the UI - otherwise the UI is pointless).
 					 *
 					 */
-					const isHunkHeader = idx === 0;
+					if (idx === 0 && !(_line.attrs & DiffLineAttr.IS_HUNK_HEADER)) {
+						const msg = `1st line in hunk not hunk header? impossible.`;
+						throw new Error(msg);
+					}
+
+					const isHunkHeader: boolean = !!(_line.attrs & DiffLineAttr.IS_HUNK_HEADER);
 					const line: DiffLine = !isHunkHeader
 						? _line
 						: {
@@ -964,9 +1001,7 @@ export const DiffLines: FC<DiffLinesProps> = ({
 								lineStr: convertUIHunkToGitApplyableHunk(diffLines, selectedBucket).adjustedHunkHeader,
 						  };
 
-					const isAddd = isAdd(line.lineStr);
-					const isDell = isDel(line.lineStr);
-					const isStageable: boolean = isLineStageable(line.lineStr);
+					const isStageable: boolean = !!(line.attrs & DiffLineAttr.IS_STAGEABLE);
 					const isStagedInCurrentBucket: boolean = currentBucketIsSelected(line.bucket);
 
 					return (
@@ -981,28 +1016,17 @@ export const DiffLines: FC<DiffLinesProps> = ({
 
 								<input
 									type="checkbox"
+									disabled={!isStageable}
 									checked={isStagedInCurrentBucket}
-									onClick={() => {
-										if (!isStagedInCurrentBucket) {
-											// line.bucket = selectedBucket;
-											dispatchDiffFiles({
-												type: "assign_line_to_bucket",
-												fileIdx,
-												hunkIdx,
-												lineIdx: idx,
-												bucket: selectedBucket,
-											});
-										} else {
-											// line.bucket = -1;
-											dispatchDiffFiles({
-												type: "assign_line_to_bucket", //
-												fileIdx,
-												hunkIdx,
-												lineIdx: idx,
-												bucket: BUCKET_NONE,
-											});
-										}
-									}}
+									onClick={() =>
+										dispatchDiffFiles({
+											type: "assign_line_to_bucket",
+											fileIdx,
+											hunkIdx,
+											lineIdx: idx,
+											bucket: !isStagedInCurrentBucket ? selectedBucket : BUCKET_NONE,
+										})
+									}
 									className={cx(
 										css`
 											height: 1.5em;
@@ -1023,10 +1047,10 @@ export const DiffLines: FC<DiffLinesProps> = ({
 									{
 										[css`
 											background: hsla(120, 100%, 16%, 0.5);
-										`]: isAddd,
+										`]: !!(line.attrs & DiffLineAttr.IS_ADD),
 										[css`
 											background: hsla(0, 100%, 27%, 0.3);
-										`]: isDell,
+										`]: !!(line.attrs & DiffLineAttr.IS_DEL),
 									}
 								)}>
 									{lineToProperVisualSpacing(line.lineStr)}
@@ -1039,10 +1063,6 @@ export const DiffLines: FC<DiffLinesProps> = ({
 		</>
 	);
 };
-
-export const isAdd = (line: string): boolean => line[0] === "+";
-export const isDel = (line: string): boolean => line[0] === "-";
-export const isLineStageable = (line: string): boolean => isDel(line) || isAdd(line);
 
 export const convertStageableToRegular = (line: string): string => " " + line.slice(1);
 
