@@ -262,7 +262,7 @@ export const fetchDiffFiles = async (): Promise<DiffFile[]> => {
 						line: idx,
 						col: 0,
 					},
-					bucket: -1,
+					bucket: BUCKET_NONE,
 				})
 			)
 		),
@@ -369,7 +369,7 @@ export const Buckets: FC<BucketsProps> = ({
 				`}
 			>
 				buckets
-				{selectedBucket === -1 ? null : (
+				{selectedBucket === BUCKET_NONE ? null : (
 					<>
 						<span>[</span>
 						<BucketLetter selectedBucket={selectedBucket} bucketCount={buckets.length} />
@@ -845,8 +845,6 @@ export type BucketLetterProps = {
 	bucketCount: number;
 };
 export const BucketLetter: FC<BucketLetterProps> = ({ selectedBucket, bucketCount }) => {
-	console.log({ selectedBucket });
-
 	return (
 		<>
 			<span
@@ -860,7 +858,7 @@ export const BucketLetter: FC<BucketLetterProps> = ({ selectedBucket, bucketCoun
 					{
 						[css`
 							opacity: 0;
-						`]: selectedBucket === -1,
+						`]: selectedBucket === BUCKET_NONE,
 					}
 				)}
 			>
@@ -892,13 +890,15 @@ export const FilesWithDiffLines: FC<FilesWithDiffLinesProps> = ({}) => {
 	return <></>;
 };
 
+export const BUCKET_NONE = -1;
+
 const TEST_DIFFLINES: DiffLine[] = [
-	{ lineStr: "@@ -1,3 +1,3 @@ xlsattr() {", filePos: { filepath: "foo.ts", line: 0, col: 1 }, bucket: -1 },
-	{ lineStr: " foo", filePos: { filepath: "foo.ts", line: 1, col: 1 }, bucket: -1 },
-	{ lineStr: "-bar", filePos: { filepath: "foo.ts", line: 2, col: 1 }, bucket: -1 },
-	{ lineStr: "+baz", filePos: { filepath: "foo.ts", line: 3, col: 1 }, bucket: -1 },
-	{ lineStr: "+yeet", filePos: { filepath: "foo.ts", line: 4, col: 1 }, bucket: -1 },
-	{ lineStr: "    fizz", filePos: { filepath: "foo.ts", line: 1, col: 1 }, bucket: -1 },
+	{ lineStr: "@@ -1,3 +1,3 @@ xlsattr() {", filePos: { filepath: "foo.ts", line: 0, col: 1 }, bucket: BUCKET_NONE },
+	{ lineStr: " foo", filePos: { filepath: "foo.ts", line: 1, col: 1 }, bucket: BUCKET_NONE },
+	{ lineStr: "-bar", filePos: { filepath: "foo.ts", line: 2, col: 1 }, bucket: BUCKET_NONE },
+	{ lineStr: "+baz", filePos: { filepath: "foo.ts", line: 3, col: 1 }, bucket: BUCKET_NONE },
+	{ lineStr: "+yeet", filePos: { filepath: "foo.ts", line: 4, col: 1 }, bucket: BUCKET_NONE },
+	{ lineStr: "    fizz", filePos: { filepath: "foo.ts", line: 1, col: 1 }, bucket: BUCKET_NONE },
 ];
 
 const TEST_DIFFHUNKS: DiffHunk[] = [
@@ -936,7 +936,7 @@ export const DiffLines: FC<DiffLinesProps> = ({
 	selectedBucket,
 	bucketCount,
 }) => {
-	const currentBucketIsSelected = (lineBucket: number): boolean => lineBucket !== -1 && lineBucket === selectedBucket;
+	const currentBucketIsSelected = (lineBucket: number): boolean => lineBucket !== BUCKET_NONE && lineBucket === selectedBucket;
 
 	if (!diffLines.length || (diffLines.length === 1 && !diffLines[0].lineStr)) {
 		return null;
@@ -946,8 +946,6 @@ export const DiffLines: FC<DiffLinesProps> = ({
 		<>
 			<ul>
 				{diffLines.map((_line, idx) => {
-					const isStageable: boolean = isLineStageable(_line.lineStr);
-
 					/**
 					 * if line is the hunk header line (1st line in DiffHunk by our convention),
 					 * we want to reflect the lineStr of the hunk header inside the UI.
@@ -966,6 +964,11 @@ export const DiffLines: FC<DiffLinesProps> = ({
 								lineStr: convertUIHunkToGitApplyableHunk(diffLines, selectedBucket).adjustedHunkHeader,
 						  };
 
+					const isAddd = isAdd(line.lineStr);
+					const isDell = isDel(line.lineStr);
+					const isStageable: boolean = isLineStageable(line.lineStr);
+					const isStagedInCurrentBucket: boolean = currentBucketIsSelected(line.bucket);
+
 					return (
 						<li>
 							<div
@@ -978,9 +981,9 @@ export const DiffLines: FC<DiffLinesProps> = ({
 
 								<input
 									type="checkbox"
-									checked={currentBucketIsSelected(line.bucket)}
+									checked={isStagedInCurrentBucket}
 									onClick={() => {
-										if (!currentBucketIsSelected(line.bucket)) {
+										if (!isStagedInCurrentBucket) {
 											// line.bucket = selectedBucket;
 											dispatchDiffFiles({
 												type: "assign_line_to_bucket",
@@ -996,7 +999,7 @@ export const DiffLines: FC<DiffLinesProps> = ({
 												fileIdx,
 												hunkIdx,
 												lineIdx: idx,
-												bucket: -1,
+												bucket: BUCKET_NONE,
 											});
 										}
 									}}
@@ -1016,7 +1019,18 @@ export const DiffLines: FC<DiffLinesProps> = ({
 									)}
 								/>
 
-								<code>{lineToProperVisualSpacing(line.lineStr)}</code>
+								<code className={cx(
+									{
+										[css`
+											background: hsla(120, 100%, 16%, 0.5);
+										`]: isAddd,
+										[css`
+											background: hsla(0, 100%, 27%, 0.3);
+										`]: isDell,
+									}
+								)}>
+									{lineToProperVisualSpacing(line.lineStr)}
+								</code>
 							</div>
 						</li>
 					);
