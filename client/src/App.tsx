@@ -44,11 +44,12 @@ function App() {
 					flex-direction: row;
 					justify-content: space-around;
 
+					border-top: var(--ui-separator-border);
+
 					& > * {
 						flex-grow: 1;
 						max-height: 100vh;
 						overflow-y: scroll;
-						border: 4px solid black;
 					}
 					`
 				}
@@ -59,6 +60,9 @@ function App() {
 					selectedBucket={selectedBucket}
 					setSelectedBucket={setSelectedBucket}
 					diffFiles={diffFiles}
+					className={css`
+						border-right: var(--ui-separator-border);
+					`}
 				></Buckets>
 
 				<section
@@ -82,13 +86,27 @@ function App() {
 							`}
 						>
 							{/* filename */}
-							{file.eq ? (
-								<pre>{file.to}</pre>
-							) : (
-								<pre>
-									<span>{file.from}</span> <span>{"->"}</span> <span>{file.to}</span>
-								</pre>
-							)}
+							<div className={css`
+								position: sticky;
+								// top: 1em;
+								top: 0;
+								display: inline-block;
+							`}>
+									<pre className={css`
+										background: var(--bg);
+										color: #ffffffa0;
+										font-size: 0.9rem;
+										margin: 0;
+										padding: 2px 12px 4px 0px;
+										border-bottom-right-radius: 6px;
+									`}>
+										{file.eq
+											? null
+											: <><span>{file.from}</span><span>{" -> "}</span></>
+										}
+										<span>{file.to}</span>
+									</pre>
+							</div>
 
 							{/* hunks of file */}
 							<div
@@ -320,6 +338,8 @@ export type BucketsProps = {
 
 	/** needed to know what lines have selected this bucket */
 	diffFiles: DiffFile[];
+
+	className?: string;
 };
 export const Buckets: FC<BucketsProps> = ({
 	buckets = [], //
@@ -327,13 +347,17 @@ export const Buckets: FC<BucketsProps> = ({
 	selectedBucket,
 	setSelectedBucket,
 	diffFiles,
+	className,
 }) => {
 	return (
 		<div
-			className={css`
-				height: 100%;
-				overflow-y: scroll;
-			`}
+			className={cx(
+				css`
+					height: 100%;
+					overflow-y: scroll;
+				`,
+				className
+			)}
 		>
 			<h2
 				className={css`

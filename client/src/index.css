@@ -5,12 +5,18 @@
 	box-sizing: border-box;
 }
 
+:root {
+	--bg: #282c34;
+
+	--ui-separator-border: 3px solid black;
+}
+
 ul {
 	list-style: none;
 }
 
 body {
-	background-color: #282c34;
+	background-color: var(--bg);
 	margin: 0;
 	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans",
 		"Droid Sans", "Helvetica Neue", sans-serif;
