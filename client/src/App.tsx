@@ -881,6 +881,7 @@ export const BucketLetter: FC<BucketLetterProps> = ({ selectedBucket, bucketCoun
 						width: 2ch;
 
 						text-align: center;
+						user-select: none;
 					`,
 					{
 						[css`
@@ -962,105 +963,243 @@ export type DiffLinesProps = {
 
 export const DiffLines: FC<DiffLinesProps> = ({
 	diffLines = [], //
-	dispatchDiffFiles,
-	fileIdx,
-	hunkIdx,
-	selectedBucket,
-	bucketCount,
+	...rest
 }) => {
-	const currentBucketIsSelected = (lineBucket: number): boolean => lineBucket !== BUCKET_NONE && lineBucket === selectedBucket;
-
 	if (!diffLines.length || (diffLines.length === 1 && !diffLines[0].lineStr)) {
 		return null;
 	}
 
+	const jsx = [];
+
+	for (let i = 0; i < diffLines.length; i++) {
+		const dl = diffLines[i];
+
+		const isGroup = dl.attrs & DiffLineAttr.IS_STAGEABLE;
+		if (!isGroup) {
+			jsx.push(
+				<DiffLine
+					{...rest}
+					diffLines={diffLines}
+					idx={i}
+					line={dl}
+				/>
+			);
+		} else {
+			const group = [];
+
+			while (i < diffLines.length && diffLines[i].attrs & DiffLineAttr.IS_STAGEABLE) {
+				group.push({
+					...rest,
+					diffLines,
+					idx: i,
+					line: diffLines[i],
+				});
+				i++;
+			}
+			i--; // next cycle
+
+			jsx.push(<li><DiffLineGroup group={group} /></li>);
+		}
+	}
+
+	return <ul>{jsx}</ul>;
+};
+
+export const DiffLineGroup: FC<{ group: DiffLineProps[] }> = ({ group }) => {
+	function toggleAllSubgroups() {
+		const anySelectedCurrentBucket: boolean = group.some(g => g.line.bucket === g.selectedBucket)
+
+		for (const g of group) {
+			g.dispatchDiffFiles({
+				type: "assign_line_to_bucket",
+				fileIdx: g.fileIdx,
+				hunkIdx: g.hunkIdx,
+				lineIdx: g.idx,
+				bucket: anySelectedCurrentBucket ? BUCKET_NONE : g.selectedBucket,
+			})
+		}
+	}
+	
+	return <div
+		className={css`
+			position: relative;
+		`}
+	>
+		<button
+			onClick={toggleAllSubgroups}
+			type="button"
+			className={css`
+				position: absolute;
+				top: 0;
+				left: -20px;
+				width: 2px;
+				height: 100%;
+				padding: 4px 16px;
+				z-index: 2;
+				border: none;
+				background: none;
+			`}
+		>
+			<SystemOfEquationsSymbol />
+		</button>
+
+		{group.map(g => <DiffLine {...g}></DiffLine>)}
+	</div>
+};
+
+/**
+ *   _
+ *  /
+ *  |
+ *  |
+ * <
+ *  |
+ *  |
+ *  \_
+ *  
+ */
+export const SystemOfEquationsSymbol: FC = () => {
+	return <div
+		className={css`
+			display: flex;
+			flex-direction: column;
+			height: 100%;
+		`}
+	>
+		<div className={css`
+			width: 7px;
+			height: 7px;
+			border-top-left-radius: 5px;
+			border-width: 1px 0px 0px 1px;
+			border-style: solid;
+			border-color: white;
+			background: transparent;
+		`} />
+		<div className={css`
+			transform: translate(-6px);
+			width: 7px;
+			flex-grow: 1;
+			border-bottom-right-radius: 8px;
+			border-width: 0px 1px 0px 0px;
+			border-style: solid;
+			border-color: white;
+			background: transparent;
+		`}/>
+		<div className={css`
+			transform: translate(-6px);
+			width: 7px;
+			flex-grow: 1;
+			border-top-right-radius: 8px;
+			border-width: 0px 1px 0px 0px;
+			border-style: solid;
+			border-color: white;
+			background: transparent;
+		`}/>
+		<div className={css`
+			width: 7px;
+			height: 7px;
+			border-bottom-left-radius: 5px;
+			border-width: 0px 0px 1px 1px;
+			border-style: solid;
+			border-color: white;
+			background: transparent;
+		`} />
+	</div>
+};
+
+export type DiffLineProps = Omit<DiffLinesProps, ""> & {
+	idx: number;
+	line: DiffLine;
+};
+export const DiffLine: FC<DiffLineProps> = ({
+	idx,
+	line: _line,
+	diffLines,
+	selectedBucket,
+	bucketCount,
+	dispatchDiffFiles,
+	fileIdx,
+	hunkIdx,
+}) => {
+	const currentBucketIsSelected = (lineBucket: number): boolean => lineBucket !== BUCKET_NONE && lineBucket === selectedBucket;
+
+
+	/**
+	 * if line is the hunk header line (1st line in DiffHunk by our convention),
+	 * we want to reflect the lineStr of the hunk header inside the UI.
+	 *
+	 * we don't want this for other lines obviously,
+	 * because e.g. all stage-able lines that are not selected in the UI
+	 * would simply disappear (as they should in the final hunk that's applyable by git,
+	 * but shouldn't in the UI - otherwise the UI is pointless).
+	 *
+	 */
+	if (idx === 0 && !(_line.attrs & DiffLineAttr.IS_HUNK_HEADER)) {
+		const msg = `1st line in hunk not hunk header? impossible.`;
+		throw new Error(msg);
+	}
+
+	const isHunkHeader: boolean = !!(_line.attrs & DiffLineAttr.IS_HUNK_HEADER);
+	const line: DiffLine = !isHunkHeader
+		? _line
+		: {
+			..._line, //
+			lineStr: convertUIHunkToGitApplyableHunk(diffLines, selectedBucket).adjustedHunkHeader,
+		};
+
+	const isStageable: boolean = !!(line.attrs & DiffLineAttr.IS_STAGEABLE);
+	const isStagedInCurrentBucket: boolean = currentBucketIsSelected(line.bucket);
+
 	return (
-		<>
-			<ul>
-				{diffLines.map((_line, idx) => {
-					/**
-					 * if line is the hunk header line (1st line in DiffHunk by our convention),
-					 * we want to reflect the lineStr of the hunk header inside the UI.
-					 *
-					 * we don't want this for other lines obviously,
-					 * because e.g. all stage-able lines that are not selected in the UI
-					 * would simply disappear (as they should in the final hunk that's applyable by git,
-					 * but shouldn't in the UI - otherwise the UI is pointless).
-					 *
-					 */
-					if (idx === 0 && !(_line.attrs & DiffLineAttr.IS_HUNK_HEADER)) {
-						const msg = `1st line in hunk not hunk header? impossible.`;
-						throw new Error(msg);
+		<li>
+			<div
+				className={css`
+					display: flex;
+					align-items: center;
+				`}
+			>
+				<BucketLetter selectedBucket={line.bucket} bucketCount={bucketCount} />
+
+				<input
+					type="checkbox"
+					disabled={!isStageable}
+					checked={isStagedInCurrentBucket}
+					onClick={() => dispatchDiffFiles({
+						type: "assign_line_to_bucket",
+						fileIdx,
+						hunkIdx,
+						lineIdx: idx,
+						bucket: !isStagedInCurrentBucket ? selectedBucket : BUCKET_NONE,
+					})}
+					className={cx(
+						css`
+							height: 1.5em;
+							width: 1.5em;
+
+							margin: 0.25em;
+							margin-right: 0.5em;
+						`,
+						{
+							[css`
+								visibility: hidden;
+							`]: !isStageable,
+						}
+					)} />
+
+				<code className={cx(
+					{
+						[css`
+							background: hsla(120, 100%, 16%, 0.5);
+						`]: !!(line.attrs & DiffLineAttr.IS_ADD),
+						[css`
+							background: hsla(0, 100%, 27%, 0.3);
+						`]: !!(line.attrs & DiffLineAttr.IS_DEL),
 					}
-
-					const isHunkHeader: boolean = !!(_line.attrs & DiffLineAttr.IS_HUNK_HEADER);
-					const line: DiffLine = !isHunkHeader
-						? _line
-						: {
-								..._line, //
-								lineStr: convertUIHunkToGitApplyableHunk(diffLines, selectedBucket).adjustedHunkHeader,
-						  };
-
-					const isStageable: boolean = !!(line.attrs & DiffLineAttr.IS_STAGEABLE);
-					const isStagedInCurrentBucket: boolean = currentBucketIsSelected(line.bucket);
-
-					return (
-						<li>
-							<div
-								className={css`
-									display: flex;
-									align-items: center;
-								`}
-							>
-								<BucketLetter selectedBucket={line.bucket} bucketCount={bucketCount} />
-
-								<input
-									type="checkbox"
-									disabled={!isStageable}
-									checked={isStagedInCurrentBucket}
-									onClick={() =>
-										dispatchDiffFiles({
-											type: "assign_line_to_bucket",
-											fileIdx,
-											hunkIdx,
-											lineIdx: idx,
-											bucket: !isStagedInCurrentBucket ? selectedBucket : BUCKET_NONE,
-										})
-									}
-									className={cx(
-										css`
-											height: 1.5em;
-											width: 1.5em;
-
-											margin: 0.25em;
-											margin-right: 0.5em;
-										`,
-										{
-											[css`
-												visibility: hidden;
-											`]: !isStageable,
-										}
-									)}
-								/>
-
-								<code className={cx(
-									{
-										[css`
-											background: hsla(120, 100%, 16%, 0.5);
-										`]: !!(line.attrs & DiffLineAttr.IS_ADD),
-										[css`
-											background: hsla(0, 100%, 27%, 0.3);
-										`]: !!(line.attrs & DiffLineAttr.IS_DEL),
-									}
-								)}>
-									{lineToProperVisualSpacing(line.lineStr)}
-								</code>
-							</div>
-						</li>
-					);
-				})}
-			</ul>
-		</>
+				)}>
+					{lineToProperVisualSpacing(line.lineStr)}
+				</code>
+			</div>
+		</li>
 	);
 };
 
