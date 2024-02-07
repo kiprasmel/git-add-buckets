@@ -136,7 +136,7 @@ mv "${TMP_PATCH_FILE}" "${PATCH_FILE}"
 		(err, stdout, stderr) => {
 			console.log({ err, stdout, stderr });
 
-			if (err || stderr) {
+			if (err) {
 				console.error({ err, stderr });
 
 				return res.status(500).json({
