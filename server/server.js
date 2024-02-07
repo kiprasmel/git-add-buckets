@@ -108,8 +108,6 @@ app.post("/api/v1/commit-diff-lines", async (req, res) => {
 	const EDITOR_SCRIPT = `\
 #!/bin/sh
 
-ls -la ${path.join(projectPath, dotGitDir)}
-
 [ -f "${PATCH_FILE}" ] && {
 	rm "${PATCH_FILE}"
 }
@@ -128,7 +126,6 @@ mv "${TMP_PATCH_FILE}" "${PATCH_FILE}"
 		{
 			cwd: projectPath,
 			env: {
-				// TODO: bash script that will take care, just like in git-stacked-rebase.
 				EDITOR: SCRIPT_FILEPATH,
 			},
 			// stdio: "inherit",
@@ -168,7 +165,23 @@ mv "${TMP_PATCH_FILE}" "${PATCH_FILE}"
 
 					fs.unlinkSync(COMMIT_MSG_FILEPATH);
 
-					return res.status(200).json(stdout2.split("\n"));
+					const fmt = (xs) => {
+						const spl = xs.split("\n")
+						if (!spl.length || spl.length === 1 && spl[0] === "") return []
+						return spl
+					}
+
+					const stat = {
+						add: {
+							stdout: fmt(stdout),
+							stderr: fmt(stderr),
+						},
+						commit: {
+							stdout: fmt(stdout2),
+							stderr: fmt(stderr2),
+						},
+					}
+					return res.status(200).json(stat);
 				}
 			);
 		}

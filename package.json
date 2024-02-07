@@ -6,7 +6,7 @@
   "author": "Kipras Melnikovas <kipras@kipras.org> (http://kipras.org/)",
   "license": "UNLICENSED",
   "scripts": {
-    "dev": "concurrently 'yarn start:server' 'yarn start:client'",
+    "dev": "concurrently --kill-others 'yarn start:server' 'yarn start:client'",
     "start:server": "yarn --cwd client start",
     "start:client": "yarn --cwd server start"
   },
