@@ -628,8 +628,19 @@ export const convertUIHunkToGitApplyableHunk = (
 	let unselectedAdds = 0;
 	let unselectedDels = 0;
 
-	const tmpLines = [];
+	const tmpLines: string[] = [];
+	const addLine = (l: string, isStaged: boolean): void => {
+		if (!isStaged) {
+			tmpLines.push(l)
+		} else {
+			/** TODO: *actually* trim (need to figure out how to make git accept the patch) */
+			//tmpLines.push(trimTrailingWhitespace(l))
+			tmpLines.push(l)
+		}
+	}
+
 	let hasSelectedStageableLine = false;
+
 	for (let i = 1; i < hunk.length; i++) {
 		const diffLine = hunk[i];
 		const line = diffLine.lineStr;
@@ -642,14 +653,14 @@ export const convertUIHunkToGitApplyableHunk = (
 			 *
 			 * if we don't add the line, we'd have to adjust the hunk header.
 			 */
-			tmpLines.push(line);
+			addLine(line, false);
 		} else {
 			/**
 			 * is stage-able, i.e. is either add or del
 			 */
 			if (diffLine.bucket === selectedBucket) {
 				hasSelectedStageableLine = true;
-				tmpLines.push(line);
+				addLine(line, true);
 			} else {
 				/**
 				 * is stage-able, but is not selected,
@@ -667,7 +678,7 @@ export const convertUIHunkToGitApplyableHunk = (
 					 * though, needs to be converted from a deletion to a regular line
 					 */
 					const deletedToRegularLine = convertStageableToRegular(line);
-					tmpLines.push(deletedToRegularLine);
+					addLine(deletedToRegularLine, false);
 				} else {
 					const msg = `BUG: line is stage-able, but is neither an addition or a deletion. line = "${line}"`;
 					throw new Error(msg);
@@ -1203,9 +1214,20 @@ export const DiffLine: FC<DiffLineProps> = ({
 	);
 };
 
+/** only for staged lines - do NOT modify existing lines! */
+export const trimTrailingWhitespace = (line: string): string => line.trimRight();
+
 export const convertStageableToRegular = (line: string): string => " " + line.slice(1);
 
 export const lineToProperVisualSpacing = (line: string): (string | JSX.Element)[] => {
+	if (line.length === 1 && line[0] === " ") {
+		/**
+		* empty line, just that when we're in a diff format,
+		* git adds a space to account for + and - in other lines.
+		*/
+		return [<span>&nbsp;</span>]
+	}
+
 	const jsx = [];
 
 	let i = 0;
@@ -1223,7 +1245,22 @@ export const lineToProperVisualSpacing = (line: string): (string | JSX.Element)[
 
 			++i;
 		}
-		jsx.push(<span dangerouslySetInnerHTML={{ __html: "&nbsp".repeat(spaceCnt) }} />);
+
+		const hasTrailingSpaces = spaceCnt > 0 && i >= line.length;
+
+		const el = <span
+			dangerouslySetInnerHTML={{ __html: "&nbsp".repeat(spaceCnt) }}
+			title={!hasTrailingSpaces ? "" : "trailing space, can't commit"}
+			className={cx(
+				{
+					[css`
+						border: 3px dashed red;
+						/*text-decoration: wavy underline red;*/
+					`]: hasTrailingSpaces,
+				}
+			)}
+		/>
+		jsx.push(el);
 
 		/**
 		 * perform non-spaces.
