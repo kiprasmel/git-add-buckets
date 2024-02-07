@@ -145,10 +145,17 @@ mv "${TMP_PATCH_FILE}" "${PATCH_FILE}"
 			}
 
 			/**
+			 * save commitMessage into file, so that won't get interpreted in the shell,
+			 * e.g. "fix `git`: change foo" -> would eval `git`
+			 */
+			const COMMIT_MSG_FILEPATH = path.join(projectPath, dotGitDir, ".commit_msg");
+			fs.writeFileSync(COMMIT_MSG_FILEPATH, commitMessage);
+
+			/**
 			 * otherwise, if success, perform the actual commit.
 			 */
 			const f2 = cp.exec(
-				`${gitCmd} commit -m "${commitMessage}"`,
+				`${gitCmd} commit -F "${COMMIT_MSG_FILEPATH}"`,
 				{
 					cwd: projectPath,
 				},
@@ -158,6 +165,8 @@ mv "${TMP_PATCH_FILE}" "${PATCH_FILE}"
 						stdout2,
 						stderr2,
 					});
+
+					fs.unlinkSync(COMMIT_MSG_FILEPATH);
 
 					return res.status(200).json(stdout2.split("\n"));
 				}
