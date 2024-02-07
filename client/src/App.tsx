@@ -163,6 +163,7 @@ export const bucketsReducer: Reducer<Bucket[], BucketsReducerActions> = (state, 
 
 		console.log({ gitAddEditLines });
 
+		// TODO: no "side effects" in reducers (lame! only reason i refactored was to cleanup logic but now this bs)
 		fetch(`/api/v1/commit-diff-lines?${commonUrlQuery}`, {
 			method: "POST",
 			headers: {
