@@ -1,5 +1,6 @@
 import { Dispatch, FC, Reducer, useEffect, useReducer, useRef, useState } from "react";
 import { css, cx } from "emotion";
+import * as MLS from "mini-local-storage";
 
 import "./App.css";
 
@@ -7,6 +8,16 @@ import "./App.css";
  * UX: select 1st bucket by default
  */
 const DEFAULT_SELECTED_BUCKET = 0;
+
+export type Project = {
+	path: string;
+	gitCmd?: string;
+	gitDir?: string;
+};
+export type GitAddBucketsLS = MLS.LS<{
+	projects: Project[];
+}>
+export const LS = MLS.createLocalStorage<GitAddBucketsLS>();
 
 function App() {
 	const [buckets, dispatchBuckets] = useReducer(bucketsReducer, TEST_BUCKETS);
@@ -164,7 +175,7 @@ export const bucketsReducer: Reducer<Bucket[], BucketsReducerActions> = (state, 
 		console.log({ gitAddEditLines });
 
 		// TODO: no "side effects" in reducers (lame! only reason i refactored was to cleanup logic but now this bs)
-		fetch(`/api/v1/commit-diff-lines?${commonUrlQuery}`, {
+		fetch(`/api/v1/commit-diff-lines?${getProjectConfigURLParams()}`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
@@ -237,17 +248,22 @@ const gitCmd = `git --git-dir="/Users/kipras/.dotfiles/" --work-tree="/Users/kip
 const dotGitDir = `.dotfiles`;
 
 // const projectPath = "/Users/kipras/projects/git-add-buckets"; // path.resolve(__dirname)
+// const projectPath = "/Users/kipras/projects/git-reroll"; // CHANGE ME
+
 // const gitCmd = `git`;
 // const dotGitDir = `.git`;
 
-const commonUrlQuery = `projectPath=${projectPath}&gitCmd=${gitCmd}&dotGitDir=${dotGitDir}`;
+
+const getProjectConfigURLParams = () => {
+	return `projectPath=${projectPath}&gitCmd=${gitCmd}&dotGitDir=${dotGitDir}`;
+}
 
 export type FetchDiffLinesOpts = {
 	urlQuery: string;
 }
 //export const fetchDiffFiles = async ({ urlQuery }: FetchDiffLinesOpts): Promise<DiffFile[]> => {
 export const fetchDiffFiles = async (): Promise<DiffFile[]> => {
-	const data: RawDiffFile[] = await fetch(`/api/v1/diff-lines?${commonUrlQuery}`, {
+	const data: RawDiffFile[] = await fetch(`/api/v1/diff-lines?${getProjectConfigURLParams()}`, {
 		method: "GET",
 	}).then((res) => res.json());
 
